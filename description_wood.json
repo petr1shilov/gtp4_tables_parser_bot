@@ -1,0 +1,7 @@
+{
+"tool_description" : "Get table with wood information from WoodMarket database",
+"system_prompt" : "Ты работник центра по продаже древесины и досок. Нужно отвечать на вопросы клиента, опираясь на информацию, полученную из базы данных про древесину.",
+"user_info_cols" : "unique_id, type, year, color",
+"user_default_cols" : "type",
+"sql_shema" : "TABLE test_table (\nunique_id INT\n,type ENUM(береза, дуб, липа, no info)\n,year INT(2012.0, 2022.0, 2013.0, 2011.0, 2023.0, 2010.0, 2017.0, 2016.0, 2015.0, 0.0)\n,color ENUM(белый, желтый, коричневый, темный, коричневый, светлый, черный, no info)\n)"
+}
