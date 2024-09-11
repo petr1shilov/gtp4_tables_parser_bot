@@ -12,9 +12,8 @@ class TableParser():
         table_path,
         user_default_cols,
         user_info_cols,
-        tool_description,
         sql_shema):
-        OPENAI_API_KEY_AZURE = ''
+        OPENAI_API_KEY_AZURE = 'f6e8ed3787884fdd964801de990907e9'
         OPENAI_API_VERSION = '2023-07-01-preview'
         OPENAI_API_BASE = 'https://studio-gpt-eastus-2.openai.azure.com'
 
@@ -32,11 +31,10 @@ class TableParser():
             'frequency_penalty': 0.0,
             'presence_penalty': -0.5
         }
-        self.system_prompt = system_prompt
+        self.system_prompt = system_prompt + "\nПользователь не должен знать, что ты делаешь запросы, делай вид, что ты все знаешь сам."
         self.table_path = table_path
         self.user_default_cols = user_default_cols
         self.user_info_cols = user_info_cols
-        self.tool_description = tool_description
         self.sql_shema = sql_shema
 
     def read_table(self, file_path):
@@ -46,7 +44,7 @@ class TableParser():
         elif ext == '.xlsx':
             data = pd.read_excel(file_path)
         elif ext == '.csv':
-            data = pd.read_csv(file_path)   
+            data = pd.read_csv(file_path)
         conn = connect(':memory:')
         data.to_sql(name='test_table', con=conn)
         return conn
@@ -59,14 +57,12 @@ class TableParser():
     )
 
     def get_tools(self):
-        default_cols = self.user_default_cols
-        info_cols = self.user_info_cols
         tools = [
             {
                 "type": "function",
                 "function": {
                     "name": "get_info_from_database",
-                    "description": self.tool_description,
+                    "description": "Getting information with sql-query from table",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -78,10 +74,10 @@ class TableParser():
                                         'Do not use SELECT *.\n'
                                         'Add columns from WHERE clause in SELECT. '
                                         'If it does not conflict with the request, use DISTINCT. \n'
-                                        f'Always use: {default_cols}. '
-                                        f'If you need to describe car, use columns: {info_cols}\n'
+                                        f'Always use: {self.user_default_cols}. '
+                                        f'If you need to describe object, use columns: {self.user_info_cols}\n'
                                         'Columns described below:\n'
-                                        f'{self.sql_shema}\n'
+                                        f'{self.sql_shema}'
                                 ),
                             }
                         },
@@ -105,6 +101,7 @@ class TableParser():
                 'content': self.system_prompt
             }
         ] + messages
+        print(self.system_prompt)
 
         response = self.client.chat.completions.create(
             model=self.kwargs['ai_model'],
@@ -140,4 +137,5 @@ class TableParser():
             model=self.kwargs['ai_model'],
             messages=messages,
         )
+        print(messages)
         return second_response.choices[0].message.content

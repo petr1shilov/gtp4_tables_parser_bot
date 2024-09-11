@@ -13,6 +13,7 @@ from bot.states import UserStates
 from api import TableParser
 
 import json
+import pandas as pd
 
 TOKEN = '7253845178:AAFpriODIUVv6GF04zegB_5nqnjvt3EYxcE'
 
@@ -23,10 +24,10 @@ bot = Bot(TOKEN)
 @dp.message(CommandStart())
 async def command_start_hendler(message: Message, state: FSMContext) -> None:
     await message.answer(start_message)
-    message_xlsx = await message.answer(xlsx_message_text)
+
     user_id = message.from_user.id
-    await state.update_data(delete_messege=[message_xlsx.message_id], user_id=user_id, conversation=[])
-    await state.set_state(UserStates.get_xlsx)
+    await state.update_data(user_id=user_id, conversation=[])
+    await state.set_state(UserStates.get_system)
 
 
 @dp.message(Command('restart'))
@@ -35,11 +36,39 @@ async def commant_restart_hendler(message: Message, state: FSMContext):
     await command_start_hendler(message, state)
 
 
-def get_parametrs(file_path):
+def get_parametrs(file_path, xlsx_path):
     with open(file_path) as json_file:
         data = json.load(json_file)
-    return data['tool_description'], data['system_prompt'],\
-          data['user_info_cols'], data['user_default_cols'], data['sql_shema']
+
+    table_df = pd.read_excel(xlsx_path)
+
+    for k in ['user_info_cols', 'user_default_cols']:
+        if k not in data:
+            data[k] = table_df.columns
+    if 'sql_shema' not in data:
+        auto_shema = ', '.join([f'{column} {table_df[column].dtype}' for column in table_df.columns])
+        data['sql_shema'] = f"TABLE test_table ({auto_shema})"
+        print(auto_shema)
+
+    return data['user_info_cols'], data['user_default_cols'], data['sql_shema']
+
+
+@dp.message(UserStates.get_system, F.content_type == "text")
+async def get_system(message: Message, state: FSMContext):
+    user_data = await state.get_data()
+    # message_id = user_data["delete_messege"]
+    # user_id = user_data["user_id"]
+    # await bot.delete_messages(chat_id=message.chat.id, message_ids=message_id)
+
+    await state.update_data(system_prompt=message.text)
+
+    # message_text = await message.answer(system_text)
+    # await state.update_data(delete_messege=[message_text.message_id])
+
+    message_xlsx = await message.answer(xlsx_message_text)
+    user_id = message.from_user.id
+    await state.update_data(delete_messege=[message_xlsx.message_id], user_id=user_id, conversation=[])
+    await state.set_state(UserStates.get_xlsx)
 
 
 @dp.message(UserStates.get_xlsx, F.content_type == "document")
@@ -79,25 +108,34 @@ async def get_json_file(message: Message, state: FSMContext):
     file_path = file.file_path
     await bot.download_file(file_path, f"files/{json_file_name}")
 
-    tool_description, system_prompt, user_info_cols, user_default_cols, sql_shema = get_parametrs(f"files/{json_file_name}")
-    api = TableParser(tool_description, user_data['xlsx_file_name'], system_prompt, user_info_cols, user_default_cols, sql_shema)
+    user_info_cols, user_default_cols, sql_shema = get_parametrs(
+        f"files/{json_file_name}",
+        user_data['xlsx_file_name']
+    )
+    api = TableParser(
+        user_data['system_prompt'],
+        user_data['xlsx_file_name'],
+        user_info_cols,
+        user_default_cols,
+        sql_shema
+    )
 
     messege_id = message.message_id
     await state.update_data(delete_messege=[messege_id + 1])
     message_conversation = await message.answer(conversation_message_text)
     await state.update_data(conversation_messege=[message_conversation.message_id])
 
-    
+
 @dp.message(F.content_type == "text")
 async def conversation(message: Message, state: FSMContext):
     user_data = await state.get_data()
 
     conversation_list = user_data['conversation']
     conversation_list.append({'role': 'user', 'content' : message.text})
-    
+
     answer = api.get_answer(conversation_list)
     await message.answer(answer)
-    conversation_list.append({'role': 'user', 'content' : answer})
+    conversation_list.append({'role': 'assistant', 'content' : answer})
 
     await state.update_data(conversation=conversation_list)
 
