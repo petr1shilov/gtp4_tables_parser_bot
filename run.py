@@ -5,7 +5,7 @@ from aiogram.filters import Command, CommandStart, StateFilter
 from aiogram.fsm.state import default_state
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import (Message, FSInputFile)
+from aiogram.types import (Message, FSInputFile, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton)
 
 from bot.texts import *
 from bot.states import UserStates
@@ -20,6 +20,14 @@ TOKEN = '7253845178:AAFpriODIUVv6GF04zegB_5nqnjvt3EYxcE'
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 bot = Bot(TOKEN)
+
+load_params_kb = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text='Пропустить')],
+        [KeyboardButton(text='Загрузить json')]
+    ],
+    one_time_keyboard=True
+)
 
 @dp.message(CommandStart())
 async def command_start_hendler(message: Message, state: FSMContext) -> None:
@@ -37,8 +45,11 @@ async def commant_restart_hendler(message: Message, state: FSMContext):
 
 
 def get_parametrs(file_path, xlsx_path):
-    with open(file_path) as json_file:
-        data = json.load(json_file)
+    if file_path is None:
+        data = {}
+    else:
+        with open(file_path) as json_file:
+            data = json.load(json_file)
 
     table_df = pd.read_excel(xlsx_path)
 
@@ -76,7 +87,7 @@ async def get_xlxs_file(message: Message, state: FSMContext):
     user_data = await state.get_data()
     message_id = user_data["delete_messege"]
     user_id = user_data["user_id"]
-    await bot.delete_messages(chat_id=message.chat.id, message_ids=message_id)
+    # await bot.delete_messages(chat_id=message.chat.id, message_ids=message_id)
 
     file_id = message.document.file_id
     xlsx_file_name = f"{str(user_id)}_{message.document.file_name}"
@@ -88,6 +99,38 @@ async def get_xlxs_file(message: Message, state: FSMContext):
     messege_id = message.message_id
     await state.update_data(delete_messege=[messege_id + 1])
 
+    await message.answer(add_params_text, reply_markup=load_params_kb)
+
+
+@dp.message(F.text.lower() == "пропустить")
+async def process_command_skip(message: Message, state: FSMContext):
+    global api
+    user_data = await state.get_data()
+    message_id = user_data["delete_messege"]
+    user_id = user_data["user_id"]
+    # await bot.delete_messages(chat_id=message.chat.id, message_ids=message_id)
+
+    user_info_cols, user_default_cols, sql_shema = get_parametrs(
+        None,
+        user_data['xlsx_file_name']
+    )
+    api = TableParser(
+        user_data['system_prompt'],
+        user_data['xlsx_file_name'],
+        user_info_cols,
+        user_default_cols,
+        sql_shema
+    )
+
+    messege_id = message.message_id
+    await state.update_data(delete_messege=[messege_id + 1])
+    message_conversation = await message.answer(conversation_message_text)
+    await state.update_data(conversation_messege=[message_conversation.message_id])
+
+
+@dp.message(F.text.lower() == "загрузить json")
+async def process_command_load_json(message: Message, state: FSMContext):
+    # await bot.delete_messages(chat_id=message.chat.id, message_ids=message.message_id)
     message_json = await message.answer(json_message_text)
     await state.update_data(delete_messege=[message_json.message_id])
     await state.set_state(UserStates.get_json)
@@ -99,7 +142,7 @@ async def get_json_file(message: Message, state: FSMContext):
     user_data = await state.get_data()
     message_id = user_data["delete_messege"]
     user_id = user_data["user_id"]
-    await bot.delete_messages(chat_id=message.chat.id, message_ids=message_id)
+    # await bot.delete_messages(chat_id=message.chat.id, message_ids=message_id)
 
     file_id = message.document.file_id
     json_file_name = f"{str(user_id)}_{message.document.file_name}"
@@ -126,7 +169,7 @@ async def get_json_file(message: Message, state: FSMContext):
     await state.update_data(conversation_messege=[message_conversation.message_id])
 
 
-@dp.message(F.content_type == "text")
+@dp.message((F.content_type == "text") & (F.text.lower() != "пропустить"))
 async def conversation(message: Message, state: FSMContext):
     user_data = await state.get_data()
 
